@@ -1,0 +1,394 @@
+-- BurakSilentSpawner.lua | Full version with anti-lag, fly, infinite jump, GUI, more
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Humanoid = LocalPlayer.Character:WaitForChild("Humanoid")
+
+-- Known pets and eggs
+local petList = {"Dragon Fly", "Huge Raptor", "Bee", "Ladybug", "Huge Dragon Fly"}
+local eggList = {"Starter Egg", "Raptor Egg", "Golden Egg", "Huge Egg"}
+
+-- Anti-kick
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local oldNamecall = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    if getnamecallmethod() == "Kick" and self == LocalPlayer then
+        return warn("Kick attempt blocked by BurakSilentSpawner")
+    end
+    return oldNamecall(self, ...)
+end)
+
+-- Cleanup Laggy Parts
+local function cleanLag()
+    local removed = 0
+    for _, v in pairs(workspace:GetChildren()) do
+        if v:IsA("Part") or v:IsA("MeshPart") or v:IsA("Accessory") then
+            if not v:IsDescendantOf(LocalPlayer.Character) and v:GetMass() < 20 then
+                pcall(function()
+                    v:Destroy()
+                    removed += 1
+                end)
+            end
+        end
+    end
+    print("[BurakLagFix] Removed laggy parts:", removed)
+end
+
+-- Auto-clean every 10 seconds
+task.spawn(function()
+    while true do
+        cleanLag()
+        task.wait(10)
+    end
+end)
+
+-- Pet & Egg Functions
+local function spawnPet(petName)
+    ReplicatedStorage.SpawnPet:FireServer(petName, "Pet")
+end
+
+local function hatchEgg(eggName)
+    ReplicatedStorage.SpawnEgg:FireServer(eggName)
+end
+
+-- Infinite Jump
+local infJumpEnabled = false
+UIS.JumpRequest:Connect(function()
+    if infJumpEnabled then
+        Humanoid:ChangeState("Jumping")
+    end
+end)
+
+-- Fly Script
+local flying = false
+local function startFly()
+    local char = LocalPlayer.Character
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    flying = true
+    local bv = Instance.new("BodyVelocity")
+    bv.Velocity = Vector3.zero
+    bv.MaxForce = Vector3.new(1, 1, 1) * 1e5
+    bv.Parent = hrp
+
+    local bg = Instance.new("BodyGyro")
+    bg.CFrame = hrp.CFrame
+    bg.MaxTorque = Vector3.new(1, 1, 1) * 1e5
+    bg.P = 10000
+    bg.Parent = hrp
+
+    RunService.Heartbeat:Connect(function()
+        if not flying then bv:Destroy() bg:Destroy() return end
+        local cam = workspace.CurrentCamera
+        bv.Velocity = cam.CFrame.LookVector * 80
+        bg.CFrame = cam.CFrame
+    end)
+end
+
+local function stopFly()
+    flying = false
+end
+
+-- TP GUI
+local function showTeleportGUI()
+    local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+    gui.Name = "BurakTP"
+
+    local function makeBtn(txt, pos, tpPos)
+        local btn = Instance.new("TextButton", gui)
+        btn.Size = UDim2.new(0, 150, 0, 40)
+        btn.Position = pos
+        btn.Text = txt
+        btn.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.MouseButton1Click:Connect(function()
+            LocalPlayer.Character:MoveTo(tpPos)
+        end)
+    end
+
+    makeBtn("To Garden", UDim2.new(0, 10, 0, 10), Vector3.new(0, 5, 0))
+    makeBtn("To Egg Shop", UDim2.new(0, 10, 0, 60), Vector3.new(50, 5, 0))
+    makeBtn("To Pet Area", UDim2.new(0, 10, 0, 110), Vector3.new(-50, 5, 0))
+end
+
+-- Chat Command Handler
+LocalPlayer.Chatted:Connect(function(msg)
+    local args = msg:split(" ")
+    local cmd = args[1]:lower()
+
+    if cmd == "/leave" then
+        LocalPlayer:Kick("You were kicked by BurakSilentSpawner.")
+    elseif cmd == "/spawn" and args[2] then
+        spawnPet(msg:sub(8))
+    elseif cmd == "/dupe" and args[2] and tonumber(args[3]) then
+        for i = 1, tonumber(args[3]) do
+            spawnPet(args[2])
+            task.wait(0.2)
+        end
+    elseif cmd == "/egg" and args[2] then
+        hatchEgg(msg:sub(6))
+    elseif cmd == "/allpets" then
+        for _, pet in ipairs(petList) do
+            spawnPet(pet)
+            task.wait(0.2)
+        end
+    elseif cmd == "/speed" and tonumber(args[2]) then
+        Humanoid.WalkSpeed = tonumber(args[2])
+    elseif cmd == "/jump" and tonumber(args[2]) then
+        Humanoid.JumpPower = tonumber(args[2])
+    elseif cmd == "/resetspeed" then
+        Humanoid.WalkSpeed = 16
+    elseif cmd == "/resetjump" then
+        Humanoid.JumpPower = 50
+    elseif cmd == "/fly" then
+        startFly()
+    elseif cmd == "/unfly" then
+        stopFly()
+    elseif cmd == "/infjump" then
+        infJumpEnabled = true
+    elseif cmd == "/uninfjump" then
+        infJumpEnabled = false
+    elseif cmd == "/tpui" then
+        showTeleportGUI()
+    elseif cmd == "/lagfix" then
+        cleanLag()
+    elseif cmd == "/help" then
+        print("🧠 BurakSilentSpawner Commands:")
+        print("/spawn, /dupe [name] [x], /egg, /allpets")
+        print("/speed, /jump, /resetspeed, /resetjump")
+        print("/fly, /unfly, /infjump, /uninfjump")
+        print("/tpui - Teleport UI | /lagfix - Manual cleanup")
+        print("/leave - Kick yourself")
+    else
+        warn("Unknown command. Type /help")
+    end
+end)-- BurakSilentSpawner.lua | Full Features by nani035 + AI
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Humanoid = LocalPlayer.Character:WaitForChild("Humanoid")
+local UIS = game:GetService("UserInputService")
+
+-- Known pets and eggs
+local petList = {"Dragon Fly", "Huge Raptor", "Bee", "Ladybug", "Huge Dragon Fly"}
+local eggList = {"Starter Egg", "Raptor Egg", "Golden Egg", "Huge Egg"}
+
+-- Anti-kick
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local oldNamecall = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    if getnamecallmethod() == "Kick" and self == LocalPlayer then
+        return warn("Kick attempt blocked by BurakSilentSpawner")
+    end
+    return oldNamecall(self, ...)
+end)
+
+-- Pet & Egg Functions
+local function spawnPet(petName)
+    ReplicatedStorage.SpawnPet:FireServer(petName, "Pet")
+end
+
+local function hatchEgg(eggName)
+    ReplicatedStorage.SpawnEgg:FireServer(eggName)
+end
+
+-- Infinite Jump
+local infJumpEnabled = false
+UIS.JumpRequest:Connect(function()
+    if infJumpEnabled then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+    end
+end)
+
+-- Fly Script
+local flying = false
+local function startFly()
+    local char = LocalPlayer.Character
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    flying = true
+    local bv = Instance.new("BodyVelocity")
+    bv.Velocity = Vector3.zero
+    bv.MaxForce = Vector3.new(1, 1, 1) * 1e5
+    bv.Parent = hrp
+
+    local bg = Instance.new("BodyGyro")
+    bg.CFrame = hrp.CFrame
+    bg.MaxTorque = Vector3.new(1, 1, 1) * 1e5
+    bg.P = 10000
+    bg.Parent = hrp
+
+    game:GetService("RunService").Heartbeat:Connect(function()
+        if not flying then bv:Destroy() bg:Destroy() return end
+        local cam = workspace.CurrentCamera
+        bv.Velocity = cam.CFrame.LookVector * 80
+        bg.CFrame = cam.CFrame
+    end)
+end
+
+local function stopFly()
+    flying = false
+end
+
+-- TP GUI
+local function showTeleportGUI()
+    local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+    gui.Name = "BurakTP"
+
+    local function makeBtn(txt, pos, tpPos)
+        local btn = Instance.new("TextButton", gui)
+        btn.Size = UDim2.new(0, 150, 0, 40)
+        btn.Position = pos
+        btn.Text = txt
+        btn.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.MouseButton1Click:Connect(function()
+            LocalPlayer.Character:MoveTo(tpPos)
+        end)
+    end
+
+    makeBtn("To Garden", UDim2.new(0, 10, 0, 10), Vector3.new(0, 5, 0))
+    makeBtn("To Egg Shop", UDim2.new(0, 10, 0, 60), Vector3.new(50, 5, 0))
+    makeBtn("To Pet Area", UDim2.new(0, 10, 0, 110), Vector3.new(-50, 5, 0))
+end
+
+-- Chat Command Handler
+LocalPlayer.Chatted:Connect(function(msg)
+    local args = msg:split(" ")
+    local cmd = args[1]:lower()
+
+    if cmd == "/leave" then
+        LocalPlayer:Kick("You were kicked by BurakSilentSpawner.")
+    elseif cmd == "/spawn" and args[2] then
+        spawnPet(msg:sub(8))
+    elseif cmd == "/dupe" and args[2] and tonumber(args[3]) then
+        for i = 1, tonumber(args[3]) do
+            spawnPet(args[2])
+            task.wait(0.2)
+        end
+    elseif cmd == "/egg" and args[2] then
+        hatchEgg(msg:sub(6))
+    elseif cmd == "/allpets" then
+        for _, pet in ipairs(petList) do
+            spawnPet(pet)
+            task.wait(0.2)
+        end
+    elseif cmd == "/speed" and tonumber(args[2]) then
+        Humanoid.WalkSpeed = tonumber(args[2])
+    elseif cmd == "/jump" and tonumber(args[2]) then
+        Humanoid.JumpPower = tonumber(args[2])
+    elseif cmd == "/resetspeed" then
+        Humanoid.WalkSpeed = 16
+    elseif cmd == "/resetjump" then
+        Humanoid.JumpPower = 50
+    elseif cmd == "/fly" then
+        startFly()
+    elseif cmd == "/unfly" then
+        stopFly()
+    elseif cmd == "/infjump" then
+        infJumpEnabled = true
+    elseif cmd == "/uninfjump" then
+        infJumpEnabled = false
+    elseif cmd == "/tpui" then
+        showTeleportGUI()
+    elseif cmd == "/help" then
+        print("🧠 BurakSilentSpawner Commands:")
+        print("/spawn [petName], /dupe [petName] [times], /egg [eggName], /allpets")
+        print("/speed [num], /jump [num], /fly, /unfly, /infjump, /uninfjump")
+        print("/tpui - Show teleport buttons")
+        print("/resetspeed, /resetjump")
+        print("/leave - Kick yourself")
+    else
+        warn("Unknown command. Type /help")
+    end
+end)-- BurakSilentSpawner.lua | Updated with chat commands
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Known pets and eggs (edit/add if needed)
+local petList = {"Dragon Fly", "Huge Raptor", "Bee", "Ladybug", "Huge Dragon Fly"}
+local eggList = {"Starter Egg", "Raptor Egg", "Golden Egg", "Huge Egg"}
+
+-- Spawn a single pet
+local function spawnPet(petName)
+    local args = {
+        [1] = petName,
+        [2] = "Pet"
+    }
+    ReplicatedStorage.SpawnPet:FireServer(unpack(args))
+end
+
+-- Hatch a single egg
+local function hatchEgg(eggName)
+    ReplicatedStorage.SpawnEgg:FireServer(eggName)
+end
+
+-- Chat command handler
+LocalPlayer.Chatted:Connect(function(msg)
+    local args = msg:split(" ")
+    local cmd = args[1]:lower()
+
+    if cmd == "/leave" then
+        LocalPlayer:Kick("You were kicked by BurakSilentSpawner.")
+    elseif cmd == "/spawn" and args[2] then
+        spawnPet(msg:sub(8))
+    elseif cmd == "/dupe" and args[2] and tonumber(args[3]) then
+        local petName = args[2]
+        local times = tonumber(args[3])
+        for i = 1, times do
+            spawnPet(petName)
+            task.wait(0.2)
+        end
+    elseif cmd == "/egg" and args[2] then
+        hatchEgg(msg:sub(6))
+    elseif cmd == "/allpets" then
+        for _, pet in ipairs(petList) do
+            spawnPet(pet)
+            task.wait(0.2)
+        end
+    elseif cmd == "/help" then
+        print("BurakSilentSpawner Commands:")
+        print("/leave - Kick yourself")
+        print("/spawn [petName] - Spawn a pet")
+        print("/dupe [petName] [times] - Spawn pet multiple times")
+        print("/egg [eggName] - Hatch an egg")
+        print("/allpets - Spawn all known pets")
+        print("/help - Show this help message")
+    else
+        warn("Unknown command. Type /help")
+    end
+end)-- BurakSilentSpawner.lua | Simple Non-Visual Spawner with Leave Option
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- 💥 Automatically spawn a specific pet (you can change it here)
+local function spawnPet(petName)
+    local args = {
+        [1] = petName,
+        [2] = "Pet"
+    }
+
+    game:GetService("ReplicatedStorage").SpawnPet:FireServer(unpack(args))
+end
+
+-- ✅ Change this to the pet you want to auto-spawn
+spawnPet("Dragon Fly")
+
+-- 🔴 Command to leave the game (kick yourself)
+local function leaveGame()
+    LocalPlayer:Kick("You were kicked by BurakSilentSpawner.")
+end
+
+-- ⌨️ Type "/leave" in chat to trigger leave
+LocalPlayer.Chatted:Connect(function(msg)
+    if msg:lower() == "/leave" then
+        leaveGame()
+    end
+end)
